@@ -7,21 +7,14 @@ import (
 	"time"
 )
 
-type secure struct {
-	ipLogger      sync.Map
-	n             stack
-	blacklist     stack
-} //防洪中间件
-
-var Sec = secure{
-	n: stack{
-		l: &list.List{},
-		s: &sync.RWMutex{},
-	},
-	blacklist: stack{
-		l: &list.List{},
-		s: &sync.RWMutex{},
-	},
+var ipLogger sync.Map
+var n = stack{
+	l: &list.List{},
+	s: &sync.RWMutex{},
+}
+var blacklist = stack{
+	l: &list.List{},
+	s: &sync.RWMutex{},
 }
 
 type secDecrease struct {
@@ -39,11 +32,11 @@ type stack struct {
 	s *sync.RWMutex
 }
 
-type callback interface {
+type call interface {
 	Error(c *gin.Context, code uint)
 }
 
-var CallBack callback
+var callBack call
 
 func (a *stack) Front() *list.Element {
 	a.s.RLock()
@@ -72,115 +65,115 @@ func (a *stack) PushBack(e interface{}) {
 }
 
 // liveGC Map delete后无法回收占用的内存，只能remake
-func (a *secure) liveGC() {
+func liveGC() {
 	var t sync.Map
-	a.ipLogger.Range(func(key, value interface{}) bool {
+	ipLogger.Range(func(key, value interface{}) bool {
 		t.Store(key, value)
 		return true
 	})
-	a.ipLogger = t
+	ipLogger = t
 }
 
-func (a *secure) fullGc() {
-	a.ipLogger = sync.Map{}
+func fullGc() {
+	ipLogger = sync.Map{}
 }
 
 // nIpGC 手动从正常ip消除栈中回收某ip记录的内存占用
-func (a *secure) nIpGC(ip string) {
-	e := a.n.Front()
+func nIpGC(ip string) {
+	e := n.Front()
 	var t *list.Element
 	for e != nil {
 		t = e.Next()
 		if (e.Value).(secDecrease).Ip == ip {
-			a.n.Remove(e)
+			n.Remove(e)
 		}
 		e = t
 	}
 }
 
-func (a *secure) Init(ErrHandler callback) {
-	CallBack = ErrHandler
+func Init(ErrHandler call) {
+	callBack = ErrHandler
 
-	a.fullGc()
+	fullGc()
 
 	{ //被动防御部分
 		go func() { //normal消除执行
 			for {
-				if a.n.Len() == 0 {
+				if n.Len() == 0 {
 					time.Sleep(time.Minute)
 					continue
 				}
-				e := a.n.Front()
+				e := n.Front()
 				t := (e.Value).(secDecrease)
-				a.n.Remove(e)
+				n.Remove(e)
 				if t := t.Time - time.Now().Unix(); t > 0 {
 					time.Sleep(time.Duration(t) * time.Second)
 				}
-				counter, ok := a.ipLogger.Load(t.Ip)
+				counter, ok := ipLogger.Load(t.Ip)
 				if !ok {
-					a.nIpGC(t.Ip)
+					nIpGC(t.Ip)
 					continue
 				}
 				counter.(*secMapCounter).Lock.Lock()
 				if counter.(*secMapCounter).NUM < 0 {
-					a.nIpGC(t.Ip)
+					nIpGC(t.Ip)
 					counter.(*secMapCounter).Lock.Unlock()
 					continue
 				}
 				counter.(*secMapCounter).NUM--
 				if (counter.(*secMapCounter).NUM) == 0 {
-					a.ipLogger.Delete(t.Ip)
+					ipLogger.Delete(t.Ip)
 				}
 				counter.(*secMapCounter).Lock.Unlock()
 
-				if a.n.Len() == 0 {
-					a.fullGc() //回收内存
+				if n.Len() == 0 {
+					fullGc() //回收内存
 				}
 			}
 		}()
 
 		go func() { //黑名单消除执行
 			for {
-				if a.blacklist.Len() == 0 {
-					a.liveGC() //回收内存
+				if blacklist.Len() == 0 {
+					liveGC() //回收内存
 					time.Sleep(time.Hour / 2)
 					continue
 				}
-				e := a.blacklist.Front()
+				e := blacklist.Front()
 				t := e.Value.(secDecrease)
-				a.blacklist.Remove(e)
+				blacklist.Remove(e)
 				if t.Time > time.Now().Unix() {
 					time.Sleep(time.Duration(t.Time) * time.Second)
 				}
 				//解封
-				a.ipLogger.Delete(t.Ip)
+				ipLogger.Delete(t.Ip)
 			}
 		}()
 	}
 }
 
-func (a *secure) Main() func(c *gin.Context) {
+func Main() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		i, ok := a.ipLogger.Load(ip)
+		i, ok := ipLogger.Load(ip)
 		if !ok {
 			i = &secMapCounter{
 				Lock: &sync.Mutex{},
 			}
-			a.ipLogger.Store(ip, i)
+			ipLogger.Store(ip, i)
 		}
 		counter := i.(*secMapCounter)
 		counter.Lock.Lock()
 		switch {
 		case counter.NUM > 120 && counter.NUM < 300: //一分钟内最多120次访问，限制访问频次
 			counter.NUM++
-			a.n.PushBack(secDecrease{
+			n.PushBack(secDecrease{
 				ip,
 				time.Now().Unix() + 60, //60s后消除
 			})
 			fallthrough
 		case counter.NUM < 0: //被封禁
-			CallBack.Error(c, 1)
+			callBack.Error(c, 1)
 			counter.Lock.Unlock()
 			return
 		case counter.NUM >= 300: //每分钟超300次封禁IP
@@ -189,15 +182,15 @@ func (a *secure) Main() func(c *gin.Context) {
 				ip,
 				time.Now().Unix() + 1800, //半小时后解封
 			}
-			a.blacklist.PushBack(secEvent)
-			CallBack.Error(c, 1)
+			blacklist.PushBack(secEvent)
+			callBack.Error(c, 1)
 			counter.Lock.Unlock()
 			return
 		}
 		counter.Lock.Unlock()
 		c.Next()
 		counter.NUM++
-		a.n.PushBack(secDecrease{
+		n.PushBack(secDecrease{
 			ip,
 			time.Now().Unix() + 60, //60s后消除
 		})
