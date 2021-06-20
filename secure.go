@@ -32,11 +32,7 @@ type stack struct {
 	s *sync.RWMutex
 }
 
-type call interface {
-	Error(c *gin.Context, code uint)
-}
-
-var callBack call
+var callBack func(c *gin.Context)
 
 func (a *stack) Front() *list.Element {
 	a.s.RLock()
@@ -91,7 +87,7 @@ func nIpGC(ip string) {
 	}
 }
 
-func Init(ErrHandler call) {
+func Init(ErrHandler func(c *gin.Context)) {
 	callBack = ErrHandler
 
 	fullGc()
@@ -173,7 +169,7 @@ func Main() func(c *gin.Context) {
 			})
 			fallthrough
 		case counter.NUM < 0: //被封禁
-			callBack.Error(c, 1)
+			callBack(c)
 			counter.Lock.Unlock()
 			return
 		case counter.NUM >= 300: //每分钟超300次封禁IP
@@ -183,7 +179,7 @@ func Main() func(c *gin.Context) {
 				time.Now().Unix() + 1800, //半小时后解封
 			}
 			blacklist.PushBack(secEvent)
-			callBack.Error(c, 1)
+			callBack(c)
 			counter.Lock.Unlock()
 			return
 		}
