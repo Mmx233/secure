@@ -22,6 +22,18 @@ type secDecrease struct {
 	Time int64
 }
 
+func (a *secDecrease) reset() *secDecrease {
+	a.Ip = ""
+	a.Time = 0
+	return a
+}
+
+var decreasePool = &sync.Pool{
+	New: func() interface{} {
+		return &secDecrease{}
+	},
+}
+
 type secMapCounter struct {
 	NUM  int
 	Lock *sync.Mutex
@@ -80,8 +92,10 @@ func nIpGC(ip string) {
 	var t *list.Element
 	for e != nil {
 		t = e.Next()
-		if (e.Value).(secDecrease).Ip == ip {
+		d := (e.Value).(*secDecrease)
+		if d.Ip == ip {
 			n.Remove(e)
+			decreasePool.Put(d.reset())
 		}
 		e = t
 	}
@@ -100,7 +114,7 @@ func Init(ErrHandler func(c *gin.Context)) {
 					continue
 				}
 				e := n.Front()
-				t := (e.Value).(secDecrease)
+				t := (e.Value).(*secDecrease)
 				n.Remove(e)
 				if t := t.Time - time.Now().Unix(); t > 0 {
 					time.Sleep(time.Duration(t) * time.Second)
@@ -122,6 +136,9 @@ func Init(ErrHandler func(c *gin.Context)) {
 				}
 				counter.(*secMapCounter).Lock.Unlock()
 
+				//pool回收
+				decreasePool.Put(t.reset())
+
 				if n.Len() == 0 {
 					fullGc() //回收内存
 				}
@@ -136,13 +153,16 @@ func Init(ErrHandler func(c *gin.Context)) {
 					continue
 				}
 				e := blacklist.Front()
-				t := e.Value.(secDecrease)
+				t := e.Value.(*secDecrease)
 				blacklist.Remove(e)
 				if t.Time > time.Now().Unix() {
 					time.Sleep(time.Duration(t.Time) * time.Second)
 				}
 				//解封
 				ipLogger.Delete(t.Ip)
+
+				//pool回收
+				decreasePool.Put(t.reset())
 			}
 		}()
 	}
@@ -163,10 +183,10 @@ func Main() func(c *gin.Context) {
 		switch {
 		case counter.NUM > 120 && counter.NUM < 300: //一分钟内最多120次访问，限制访问频次
 			counter.NUM++
-			n.PushBack(secDecrease{
-				ip,
-				time.Now().Unix() + 60, //60s后消除
-			})
+			d := decreasePool.Get().(*secDecrease)
+			d.Ip = ip
+			d.Time = time.Now().Unix() + 60
+			n.PushBack(d)
 			fallthrough
 		case counter.NUM < 0: //被封禁
 			callBack(c)
@@ -174,7 +194,7 @@ func Main() func(c *gin.Context) {
 			return
 		case counter.NUM >= 300: //每分钟超300次封禁IP
 			counter.NUM = -1 //使被拦截
-			secEvent := secDecrease{
+			secEvent := &secDecrease{
 				ip,
 				time.Now().Unix() + 1800, //半小时后解封
 			}
@@ -186,9 +206,9 @@ func Main() func(c *gin.Context) {
 		counter.Lock.Unlock()
 		c.Next()
 		counter.NUM++
-		n.PushBack(secDecrease{
-			ip,
-			time.Now().Unix() + 60, //60s后消除
-		})
+		d := decreasePool.Get().(*secDecrease)
+		d.Ip = ip
+		d.Time = time.Now().Unix() + 60
+		n.PushBack(d)
 	}
 }
