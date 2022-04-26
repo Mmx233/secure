@@ -75,35 +75,30 @@ func New(conf *Config) gin.HandlerFunc {
 			return
 		}
 		counter.Lock()
+		defer counter.Unlock()
 		switch {
-		case counter.Num > conf.RateLimit && counter.Num < conf.BlackListRate: //一分钟内最多120次访问，限制访问频次
+		case counter.Num < 0: //被封禁
+			conf.CallBack(c)
+			return
+		case counter.Num < conf.BlackListRate: //限制访问频次
 			counter.Num++
 			d := decreasePool.Get().(*secDecrease)
 			d.Ip = ip
 			d.Time = time.Now().Unix() + 60
 			conf.normalList.PushBack(d)
-			fallthrough
-		case counter.Num < 0: //被封禁
-			counter.Unlock()
-			conf.CallBack(c)
+			if counter.Num > conf.RateLimit {
+				conf.CallBack(c)
+			}
 			return
-		case counter.Num >= conf.BlackListRate: //每分钟超300次封禁IP
+		default: //封禁IP
 			counter.Num = -1 //使被拦截
 			secEvent := &secDecrease{
 				ip,
-				time.Now().Add(conf.BlackListDuration).Unix(), //半小时后解封
+				time.Now().Add(conf.BlackListDuration).Unix(), //解封
 			}
 			conf.blackList.PushBack(secEvent)
-			counter.Unlock()
 			conf.CallBack(c)
 			return
 		}
-		counter.Unlock()
-		c.Next()
-		counter.Num++
-		d := decreasePool.Get().(*secDecrease)
-		d.Ip = ip
-		d.Time = time.Now().Unix() + 60
-		conf.normalList.PushBack(d)
 	}
 }
