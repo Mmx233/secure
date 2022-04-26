@@ -1,13 +1,7 @@
 # secure
 
-## 初始化
+## 使用
 
 ```
-secure.Init(caller) //caller为被封禁时的错误处理函数
-```
-
-## 中间件
-
-```
-secure.Main()
+secure.New(&secure.Config{})
 ```
