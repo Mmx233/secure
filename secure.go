@@ -40,7 +40,7 @@ func New(conf *Config) gin.HandlerFunc {
 			decreasePool.Put(t.reset())
 
 			if conf.normalList.Len() == 0 {
-				conf.ipLogger.GC() //回收内存
+				conf.ipLogger.Clear() //回收内存
 			}
 		}
 	}()
