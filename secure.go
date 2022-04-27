@@ -44,8 +44,12 @@ func New(conf *Config) gin.HandlerFunc {
 	go func() { //黑名单消除执行
 		for {
 			if conf.blackList.Len() == 0 {
-				conf.ipLogger.GC() //闲时回收内存
-				time.Sleep(time.Hour / 2)
+				if conf.normalList.Len() == 0 { //闲时回收内存
+					conf.ipLogger.Clear()
+				} else {
+					conf.ipLogger.GC()
+				}
+				time.Sleep(conf.BlackListDuration)
 				continue
 			}
 			e := conf.blackList.Front()
