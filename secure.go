@@ -82,11 +82,14 @@ func New(conf *Config) gin.HandlerFunc {
 			return
 		case counter.Num < conf.BlackListRate: //限制访问频次
 			counter.Num++
-			d := decreasePool.Get().(*secDecrease)
-			d.Ip = ip
-			d.Time = time.Now().Unix() + 60
-			conf.normalList.PushBack(d)
-			if counter.Num > conf.RateLimit {
+			OverLimit := counter.Num > conf.RateLimit
+			if !(OverLimit && conf.MinLimitMode) {
+				d := decreasePool.Get().(*secDecrease)
+				d.Ip = ip
+				d.Time = time.Now().Unix() + 60
+				conf.normalList.PushBack(d)
+			}
+			if OverLimit {
 				conf.CallBack(c)
 			}
 			return

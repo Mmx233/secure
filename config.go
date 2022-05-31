@@ -14,6 +14,8 @@ type Config struct {
 	BlackListRate int
 	//黑名单封禁时间
 	BlackListDuration time.Duration
+	//最小限制模式
+	MinLimitMode bool
 
 	//inline data
 	ipLogger   secMap
