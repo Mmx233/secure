@@ -24,7 +24,7 @@ func New(conf *Config) gin.HandlerFunc {
 				conf.normalList.nIpGC(t.Ip)
 				continue
 			}
-			counter.Num.Add(-1)
+			counter.Num.Add(^uint32(0))
 			if counter.Num.Load() == 0 {
 				conf.ipLogger.Delete(t.Ip)
 			}
