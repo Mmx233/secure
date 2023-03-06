@@ -24,17 +24,10 @@ func New(conf *Config) gin.HandlerFunc {
 				conf.normalList.nIpGC(t.Ip)
 				continue
 			}
-			counter.Lock()
-			if counter.Num < 0 {
-				conf.normalList.nIpGC(t.Ip)
-				counter.Unlock()
-				continue
-			}
-			counter.Num--
-			if (counter.Num) == 0 {
+			counter.Num.Add(-1)
+			if counter.Num.Load() == 0 {
 				conf.ipLogger.Delete(t.Ip)
 			}
-			counter.Unlock()
 
 			//pool回收
 			decreasePool.Put(t.reset())
@@ -70,19 +63,17 @@ func New(conf *Config) gin.HandlerFunc {
 		ip := c.ClientIP()
 		counter, ok := conf.ipLogger.Load(ip)
 		if !ok {
-			counter = &secMapCounter{}
+			counter = &atomicCounter{}
 			conf.ipLogger.Store(ip, counter)
 			return
 		}
-		counter.Lock()
-		defer counter.Unlock()
 		switch {
-		case counter.Num < 0: //被封禁
+		case counter.Banned.Load(): //被封禁
 			conf.CallBack(c)
 			return
-		case counter.Num < conf.BlackListRate: //限制访问频次
-			counter.Num++
-			OverLimit := counter.Num > conf.RateLimit
+		case counter.Num.Load() < conf.BlackListRate: //限制访问频次
+			counter.Num.Add(1)
+			OverLimit := counter.Num.Load() > conf.RateLimit
 			if !(OverLimit && conf.MinLimitMode) {
 				d := decreasePool.Get().(*secDecrease)
 				d.Ip = ip
@@ -94,7 +85,7 @@ func New(conf *Config) gin.HandlerFunc {
 			}
 			return
 		default: //封禁IP
-			counter.Num = -1 //使被拦截
+			counter.Banned.Store(true) //使被拦截
 			secEvent := &secDecrease{
 				ip,
 				time.Now().Add(conf.BlackListDuration).Unix(), //解封

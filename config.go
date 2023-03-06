@@ -9,9 +9,9 @@ type Config struct {
 	//处理达到请求速率或黑名单ip的请求
 	CallBack func(c *gin.Context)
 	//请求速度限制
-	RateLimit int
+	RateLimit uint32
 	//黑名单阈值
-	BlackListRate int
+	BlackListRate uint32
 	//黑名单封禁时间
 	BlackListDuration time.Duration
 	//最小限制模式

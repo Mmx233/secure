@@ -3,6 +3,7 @@ package secure
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 )
 
 var decreasePool = &sync.Pool{
@@ -13,21 +14,21 @@ var decreasePool = &sync.Pool{
 
 type secMap struct {
 	sync.RWMutex
-	data map[string]*secMapCounter
+	data map[string]*atomicCounter
 }
 
 func (a *secMap) init() {
-	a.data = make(map[string]*secMapCounter, 0)
+	a.data = make(map[string]*atomicCounter, 0)
 }
 
-func (a *secMap) Load(key string) (*secMapCounter, bool) {
+func (a *secMap) Load(key string) (*atomicCounter, bool) {
 	a.RLock()
 	defer a.RUnlock()
 	v, ok := a.data[key]
 	return v, ok
 }
 
-func (a *secMap) Store(key string, value *secMapCounter) {
+func (a *secMap) Store(key string, value *atomicCounter) {
 	a.Lock()
 	defer a.Unlock()
 	a.data[key] = value
@@ -42,7 +43,7 @@ func (a *secMap) Delete(key string) {
 func (a *secMap) GC() {
 	a.Lock()
 	defer a.Unlock()
-	var data = make(map[string]*secMapCounter, len(a.data))
+	var data = make(map[string]*atomicCounter, len(a.data))
 	for k, v := range a.data {
 		data[k] = v
 	}
@@ -66,9 +67,9 @@ func (a *secDecrease) reset() *secDecrease {
 	return a
 }
 
-type secMapCounter struct {
-	sync.Mutex
-	Num int
+type atomicCounter struct {
+	Num    atomic.Uint32
+	Banned atomic.Bool
 }
 
 type stack struct {
