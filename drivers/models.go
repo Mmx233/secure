@@ -1,8 +1,9 @@
 package drivers
 
+import "time"
+
 type Driver interface {
-	Init() error
-	RequestRate(ip string) (uint64, error)
+	Init(rateCycle time.Duration) error
 	AddRequest(ip string) (uint64, error)
 	RemoveIp(ip string) (uint64, error)
 }

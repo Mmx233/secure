@@ -22,20 +22,12 @@ type IpQueueEl struct {
 	CreateAt time.Time
 }
 
-func (a *DefaultDriver) Init() error {
-	a.period = time.Minute
+func (a *DefaultDriver) Init(rateCycle time.Duration) error {
+	a.period = rateCycle
 	a.data = make(map[string]*atomic.Uint64)
 	a.queue.Init()
 	go a.IpDecreaseCounter()
 	return nil
-}
-
-func (a *DefaultDriver) RequestRate(ip string) (uint64, error) {
-	num, ok := a.data[ip]
-	if !ok {
-		return 0, nil
-	}
-	return num.Load(), nil
 }
 
 func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
