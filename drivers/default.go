@@ -17,16 +17,11 @@ type DefaultDriver struct {
 	queue FreeLockQueue
 }
 
-type IpQueueEl struct {
-	IP       string
-	CreateAt time.Time
-}
-
 func (a *DefaultDriver) Init(rateCycle time.Duration) error {
 	a.period = rateCycle
 	a.data = make(map[string]*atomic.Uint64)
 	a.queue.Init()
-	go a.IpDecreaseCounter()
+	go a.QueueWorker()
 	return nil
 }
 
@@ -69,11 +64,12 @@ func (a *DefaultDriver) RemoveIp(ip string) (uint64, error) {
 	return num.Load(), nil
 }
 
-func (a *DefaultDriver) IpDecreaseCounter() {
+func (a *DefaultDriver) QueueWorker() {
 	for {
 		el := a.queue.Dequeue()
 		if el == nil {
 			time.Sleep(a.period)
+			continue
 		}
 		ipInfo := el.(*IpQueueEl)
 		subTime := a.period - time.Now().Sub(ipInfo.CreateAt)
