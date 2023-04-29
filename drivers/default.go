@@ -48,6 +48,14 @@ func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
 	return num.Add(1), nil
 }
 
+func (a *DefaultDriver) RequestRate(ip string) (uint64, error) {
+	num, ok := a.data[ip]
+	if !ok {
+		return 0, nil
+	}
+	return num.Load(), nil
+}
+
 func (a *DefaultDriver) RemoveIp(ip string) (uint64, error) {
 	num, ok := a.data[ip]
 	if ok {

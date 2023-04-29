@@ -29,8 +29,11 @@ func New(conf *Config) (*Middleware, error) {
 		return nil, e
 	}
 
-	return &Middleware{
-		Handler: func(c *gin.Context) {
+	var middleware = Middleware{
+		UnBlockIP: conf.Driver.RemoveIp,
+	}
+	if conf.UnderAttackMode {
+		middleware.Handler = func(c *gin.Context) {
 			rate, e := conf.Driver.AddRequest(c.ClientIP())
 			if e != nil {
 				fmt.Println("secure middleware store rate failed:", e)
@@ -41,7 +44,26 @@ func New(conf *Config) (*Middleware, error) {
 				conf.HandleReachLimit(c)
 				return
 			}
-		},
-		UnBlockIP: conf.Driver.RemoveIp,
-	}, nil
+		}
+	} else {
+		middleware.Handler = func(c *gin.Context) {
+			ip := c.ClientIP()
+			rate, e := conf.Driver.RequestRate(ip)
+			if e != nil {
+				fmt.Println("secure middleware read rate failed:", e)
+				return
+			}
+
+			if rate >= conf.RateLimit {
+				conf.HandleReachLimit(c)
+				return
+			}
+
+			_, e = conf.Driver.AddRequest(c.ClientIP())
+			if e != nil {
+				fmt.Println("secure middleware store rate failed:", e)
+			}
+		}
+	}
+	return &middleware, nil
 }

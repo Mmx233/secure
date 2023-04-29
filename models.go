@@ -13,5 +13,6 @@ type Config struct {
 	// 速率统计周期，默认一分钟
 	RateCycle time.Duration
 	// 速率限制
-	RateLimit uint64
+	RateLimit       uint64
+	UnderAttackMode bool
 }
