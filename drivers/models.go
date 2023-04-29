@@ -8,3 +8,8 @@ type Driver interface {
 	AddRequest(ip string) (uint64, error)
 	RemoveIp(ip string) (uint64, error)
 }
+
+type IpQueueEl struct {
+	IP       string
+	CreateAt time.Time
+}
