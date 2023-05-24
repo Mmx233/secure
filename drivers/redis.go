@@ -11,6 +11,7 @@ import (
 const redisWaitListKey = "ip-wait-list"
 
 type RedisDriver struct {
+	Key    string // redis 存储键名
 	Client *redis.Client
 
 	cycle time.Duration
@@ -18,6 +19,9 @@ type RedisDriver struct {
 
 func (a *RedisDriver) Init(rateCycle time.Duration) error {
 	a.cycle = rateCycle
+	if a.Key == "" {
+		a.Key = redisWaitListKey
+	}
 	go a.QueueWorker()
 	return nil
 }
