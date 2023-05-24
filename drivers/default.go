@@ -40,7 +40,7 @@ func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
 		IP:       ip,
 		CreateAt: time.Now(),
 	})
-	return num.Add(1), nil
+	return num.Add(uint64(1)), nil
 }
 
 func (a *DefaultDriver) RequestRate(ip string) (uint64, error) {
@@ -78,7 +78,7 @@ func (a *DefaultDriver) QueueWorker() {
 		}
 
 		num, ok := a.data[ipInfo.IP]
-		if ok && num.Add(^0) <= 0 {
+		if ok && num.Add(^uint64(0)) <= 0 {
 			a.dataLock.Lock()
 			num, ok = a.data[ipInfo.IP]
 			if ok && num.Load() <= 0 {
