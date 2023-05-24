@@ -114,8 +114,8 @@ func (a *FreeLockQueue) Enqueue(value interface{}) {
 		next := tail.Next
 		if tail == (*QueueElement)(a.tail) {
 			if next == nil {
-				if atomic.CompareAndSwapPointer(&tail.Next, next, n) {
-					atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), n)
+				if atomic.CompareAndSwapPointer(&tail.Next, next, n) && atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), n) {
+					return
 				}
 			} else { // 队列尾部异常，未指向正确元素
 				atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), next)

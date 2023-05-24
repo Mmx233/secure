@@ -59,7 +59,7 @@ func New(conf *Config) (*Middleware, error) {
 				return
 			}
 
-			_, e = conf.Driver.AddRequest(c.ClientIP())
+			_, e = conf.Driver.AddRequest(ip)
 			if e != nil {
 				fmt.Println("secure middleware store rate failed:", e)
 			}
