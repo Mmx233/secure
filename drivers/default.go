@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,11 +37,11 @@ func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
 		}
 		a.dataLock.Unlock()
 	}
-	a.queue.Enqueue(&IpQueueEl{
+	a.queue.Enqueue(unsafe.Pointer(&IpQueueEl{
 		IP:       ip,
 		CreateAt: time.Now(),
-	})
-	return num.Add(uint64(1)), nil
+	}))
+	return num.Add(1), nil
 }
 
 func (a *DefaultDriver) RequestRate(ip string) (uint64, error) {
@@ -71,7 +72,7 @@ func (a *DefaultDriver) QueueWorker() {
 			time.Sleep(a.period)
 			continue
 		}
-		ipInfo := el.(*IpQueueEl)
+		ipInfo := (*IpQueueEl)(el)
 		subTime := a.period - time.Now().Sub(ipInfo.CreateAt)
 		if subTime > 0 {
 			time.Sleep(subTime)
@@ -90,7 +91,7 @@ func (a *DefaultDriver) QueueWorker() {
 }
 
 type QueueElement struct {
-	Value interface{}
+	Value unsafe.Pointer
 	Next  unsafe.Pointer
 }
 
@@ -105,41 +106,36 @@ func (a *FreeLockQueue) Init() {
 	a.tail = a.head
 }
 
-func (a *FreeLockQueue) Enqueue(value interface{}) {
-	n := unsafe.Pointer(&QueueElement{
-		Value: value,
-	})
+func (a *FreeLockQueue) Enqueue(value unsafe.Pointer) {
+	n := unsafe.Pointer(&QueueElement{})
 	for {
 		tail := (*QueueElement)(a.tail)
 		next := tail.Next
-		if tail == (*QueueElement)(a.tail) {
-			if next == nil {
-				if atomic.CompareAndSwapPointer(&tail.Next, next, n) && atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), n) {
-					return
-				}
-			} else { // 队列尾部异常，未指向正确元素
-				atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), next)
+		if atomic.CompareAndSwapPointer(&tail.Value, nil, value) {
+			if !atomic.CompareAndSwapPointer(&tail.Next, next, n) || !atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), n) {
+				// unexpected enqueue movement
+				os.Exit(1)
+			} else {
+				return
 			}
 		}
 	}
 }
 
-func (a *FreeLockQueue) Dequeue() interface{} {
+func (a *FreeLockQueue) Dequeue() unsafe.Pointer {
 	for {
 		head := (*QueueElement)(a.head)
-		tail := (*QueueElement)(a.tail)
 		next := head.Next
+		tail := (*QueueElement)(a.tail)
 		if head == (*QueueElement)(a.head) {
 			if head == tail {
 				if next == nil { // 队列为空
 					return nil
 				}
-				// 队尾异常
-				atomic.CompareAndSwapPointer(&a.head, unsafe.Pointer(head), next)
-			} else {
-				if atomic.CompareAndSwapPointer(&a.head, unsafe.Pointer(head), next) {
-					return head.Value
-				}
+				// 队列正在添加第一个元素
+			}
+			if atomic.CompareAndSwapPointer(&a.head, unsafe.Pointer(head), next) {
+				return head.Value
 			}
 		}
 	}
