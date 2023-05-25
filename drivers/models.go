@@ -10,6 +10,6 @@ type Driver interface {
 }
 
 type IpQueueEl struct {
-	IP       string
+	Key      string
 	CreateAt time.Time
 }
