@@ -38,7 +38,7 @@ func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
 		a.dataLock.Unlock()
 	}
 	a.queue.Enqueue(unsafe.Pointer(&IpQueueEl{
-		IP:       ip,
+		Key:      ip,
 		CreateAt: time.Now(),
 	}))
 	return num.Add(1), nil
@@ -78,12 +78,12 @@ func (a *DefaultDriver) QueueWorker() {
 			time.Sleep(subTime)
 		}
 
-		num, ok := a.data[ipInfo.IP]
+		num, ok := a.data[ipInfo.Key]
 		if ok && num.Add(^uint64(0)) <= 0 {
 			a.dataLock.Lock()
-			num, ok = a.data[ipInfo.IP]
+			num, ok = a.data[ipInfo.Key]
 			if ok && num.Load() <= 0 {
-				delete(a.data, ipInfo.IP)
+				delete(a.data, ipInfo.Key)
 			}
 			a.dataLock.Unlock()
 		}
