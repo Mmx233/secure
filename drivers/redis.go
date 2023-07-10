@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"strconv"
 	"time"
 )
 
@@ -34,10 +35,11 @@ func (a *RedisDriver) Init(rateCycle time.Duration) error {
 }
 
 func (a *RedisDriver) RequestRate(ip string) (uint64, error) {
-	rate, e := a.Client.Get(context.Background(), ip).Uint64()
+	rateStr, e := a.Client.Get(context.Background(), a.ipKey(ip)).Result()
 	if e == redis.Nil {
 		e = nil
 	}
+	rate, _ := strconv.ParseUint(rateStr, 10, 64)
 	return rate, e
 }
 
