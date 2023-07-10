@@ -35,11 +35,12 @@ func (a *RedisDriver) Init(rateCycle time.Duration) error {
 }
 
 func (a *RedisDriver) RequestRate(ip string) (uint64, error) {
-	rateStr, e := a.Client.Get(context.Background(), a.ipKey(ip)).Result()
-	if e == redis.Nil {
-		e = nil
+	rate, e := a.Client.Get(context.Background(), a.ipKey(ip)).Uint64()
+	if e != nil {
+		if _, ok := e.(*strconv.NumError); ok || e == redis.Nil {
+			e = nil
+		}
 	}
-	rate, _ := strconv.ParseUint(rateStr, 10, 64)
 	return rate, e
 }
 
