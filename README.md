@@ -38,8 +38,6 @@ func Secure() gin.HandlerFunc {
 
 使用 redis 记录访问信息
 
-**该 driver 尚处于试验阶段，请谨慎使用**
-
 ```go
 package middlewares
 
