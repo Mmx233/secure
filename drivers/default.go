@@ -10,8 +10,7 @@ import (
 
 // DefaultDriver 基于内存的速率统计方法
 type DefaultDriver struct {
-	data     map[string]*atomic.Uint64
-	dataLock sync.Mutex
+	data sync.Map
 
 	period time.Duration
 
@@ -20,23 +19,14 @@ type DefaultDriver struct {
 
 func (a *DefaultDriver) Init(rateCycle time.Duration) error {
 	a.period = rateCycle
-	a.data = make(map[string]*atomic.Uint64)
 	a.queue.Init()
 	go a.QueueWorker()
 	return nil
 }
 
 func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
-	num, ok := a.data[ip]
-	if !ok {
-		a.dataLock.Lock()
-		num, ok = a.data[ip]
-		if !ok {
-			num = &atomic.Uint64{}
-			a.data[ip] = num
-		}
-		a.dataLock.Unlock()
-	}
+	numInterface, _ := a.data.LoadOrStore(ip, &atomic.Uint64{})
+	num := numInterface.(*atomic.Uint64)
 	a.queue.Enqueue(unsafe.Pointer(&IpQueueEl{
 		Key:      ip,
 		CreateAt: time.Now(),
@@ -45,24 +35,19 @@ func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
 }
 
 func (a *DefaultDriver) RequestRate(ip string) (uint64, error) {
-	num, ok := a.data[ip]
+	num, ok := a.data.Load(ip)
 	if !ok {
 		return 0, nil
 	}
-	return num.Load(), nil
+	return num.(*atomic.Uint64).Load(), nil
 }
 
 func (a *DefaultDriver) RemoveIp(ip string) (uint64, error) {
-	num, ok := a.data[ip]
+	num, ok := a.data.LoadAndDelete(ip)
 	if ok {
-		a.dataLock.Lock()
-		delete(a.data, ip)
-		if len(a.data) == 0 {
-			a.data = make(map[string]*atomic.Uint64)
-		}
-		a.dataLock.Unlock()
+		return num.(*atomic.Uint64).Load(), nil
 	}
-	return num.Load(), nil
+	return 0, nil
 }
 
 func (a *DefaultDriver) QueueWorker() {
@@ -78,14 +63,9 @@ func (a *DefaultDriver) QueueWorker() {
 			time.Sleep(subTime)
 		}
 
-		num, ok := a.data[ipInfo.Key]
-		if ok && num.Add(^uint64(0)) <= 0 {
-			a.dataLock.Lock()
-			num, ok = a.data[ipInfo.Key]
-			if ok && num.Load() <= 0 {
-				delete(a.data, ipInfo.Key)
-			}
-			a.dataLock.Unlock()
+		num, ok := a.data.Load(ipInfo.Key)
+		if ok && num.(*atomic.Uint64).Add(^uint64(0)) <= 0 {
+			a.data.Delete(ipInfo.Key)
 		}
 	}
 }
