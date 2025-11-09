@@ -1,9 +1,10 @@
 package secure
 
 import (
+	"time"
+
 	"github.com/Mmx233/secure/v2/drivers"
 	"github.com/gin-gonic/gin"
-	"time"
 )
 
 type Config struct {

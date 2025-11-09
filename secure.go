@@ -2,8 +2,9 @@ package secure
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Middleware struct {
@@ -24,9 +25,8 @@ func New(conf *Config) (*Middleware, error) {
 		}
 	}
 
-	e := conf.Driver.Init(conf.RateCycle)
-	if e != nil {
-		return nil, e
+	if err := conf.Driver.Init(conf.RateCycle); err != nil {
+		return nil, err
 	}
 
 	var middleware = Middleware{
@@ -34,9 +34,9 @@ func New(conf *Config) (*Middleware, error) {
 	}
 	if conf.UnderAttackMode {
 		middleware.Handler = func(c *gin.Context) {
-			rate, e := conf.Driver.AddRequest(c.ClientIP())
-			if e != nil {
-				fmt.Println("secure middleware store rate failed:", e)
+			rate, err := conf.Driver.AddRequest(c.ClientIP())
+			if err != nil {
+				fmt.Println("secure middleware store rate failed:", err)
 				return
 			}
 
@@ -48,9 +48,9 @@ func New(conf *Config) (*Middleware, error) {
 	} else {
 		middleware.Handler = func(c *gin.Context) {
 			ip := c.ClientIP()
-			rate, e := conf.Driver.RequestRate(ip)
-			if e != nil {
-				fmt.Println("secure middleware read rate failed:", e)
+			rate, err := conf.Driver.RequestRate(ip)
+			if err != nil {
+				fmt.Println("secure middleware read rate failed:", err)
 				return
 			}
 
@@ -59,9 +59,9 @@ func New(conf *Config) (*Middleware, error) {
 				return
 			}
 
-			_, e = conf.Driver.AddRequest(ip)
-			if e != nil {
-				fmt.Println("secure middleware store rate failed:", e)
+			_, err = conf.Driver.AddRequest(ip)
+			if err != nil {
+				fmt.Println("secure middleware store rate failed:", err)
 			}
 		}
 	}
