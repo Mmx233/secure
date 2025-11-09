@@ -3,10 +3,11 @@ package drivers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"github.com/go-redis/redis/v8"
+	"errors"
 	"strconv"
 	"time"
+
+	"github.com/go-redis/redis/v8"
 )
 
 const redisDefaultKey = "secure"
@@ -35,55 +36,55 @@ func (a *RedisDriver) Init(rateCycle time.Duration) error {
 }
 
 func (a *RedisDriver) RequestRate(ip string) (uint64, error) {
-	rate, e := a.Client.Get(context.Background(), a.ipKey(ip)).Uint64()
-	if e != nil {
-		if _, ok := e.(*strconv.NumError); ok || e == redis.Nil {
-			e = nil
+	rate, err := a.Client.Get(context.Background(), a.ipKey(ip)).Uint64()
+	if err != nil {
+		var numError *strconv.NumError
+		if errors.As(err, &numError) || errors.Is(err, redis.Nil) {
+			err = nil
 		}
 	}
-	return rate, e
+	return rate, err
 }
 
 func (a *RedisDriver) AddRequest(ip string) (uint64, error) {
 	ip = a.ipKey(ip)
-	el, e := json.Marshal(&IpQueueEl{
+	el, err := json.Marshal(&IpQueueElement{
 		Key:      ip,
 		CreateAt: time.Now(),
 	})
-	if e != nil {
-		return 0, e
+	if err != nil {
+		return 0, err
 	}
-	e = a.Client.LPush(context.Background(), a.keyWaitList, string(el)).Err()
-	if e != nil {
-		return 0, e
+	err = a.Client.LPush(context.Background(), a.keyWaitList, string(el)).Err()
+	if err != nil {
+		return 0, err
 	}
-	rate, e := a.Client.Incr(context.Background(), ip).Uint64()
-	if e != nil {
-		return 0, e
+	rate, err := a.Client.Incr(context.Background(), ip).Uint64()
+	if err != nil {
+		return 0, err
 	}
 	return rate, a.Client.Expire(context.Background(), ip, a.cycle).Err()
 }
 
 func (a *RedisDriver) RemoveIp(ip string) (uint64, error) {
-	rate, e := a.Client.Del(context.Background(), a.ipKey(ip)).Uint64()
-	if e == redis.Nil {
-		e = nil
+	rate, err := a.Client.Del(context.Background(), a.ipKey(ip)).Uint64()
+	if errors.Is(err, redis.Nil) {
+		err = nil
 	}
-	return rate, e
+	return rate, err
 }
 
 func (a *RedisDriver) QueueWorker() {
 	for {
-		el, e := a.Client.RPop(context.Background(), a.keyWaitList).Bytes()
-		if e != nil {
+		el, err := a.Client.RPop(context.Background(), a.keyWaitList).Bytes()
+		if err != nil {
 			time.Sleep(a.cycle)
 			continue
 		}
-		var ipInfo IpQueueEl
-		e = json.Unmarshal(el, &ipInfo)
-		if e != nil {
-			fmt.Println("unexpected error: secure ip wait list element unmarshal failed:", e)
-			continue
+		var ipInfo IpQueueElement
+		err = json.Unmarshal(el, &ipInfo)
+		if err != nil {
+			panic("secure middleware: list element unmarshal failed: " + err.Error())
 		}
 
 		subTime := a.cycle - time.Now().Sub(ipInfo.CreateAt)
@@ -91,8 +92,8 @@ func (a *RedisDriver) QueueWorker() {
 			time.Sleep(subTime)
 		}
 
-		rate, e := a.Client.Decr(context.Background(), ipInfo.Key).Uint64()
-		if rate <= 0 && e == nil {
+		rate, err := a.Client.Decr(context.Background(), ipInfo.Key).Uint64()
+		if rate <= 0 && err == nil {
 			_, _ = a.RemoveIp(ipInfo.Key)
 		}
 	}

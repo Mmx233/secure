@@ -1,20 +1,17 @@
 package drivers
 
 import (
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 )
 
 // DefaultDriver 基于内存的速率统计方法
 type DefaultDriver struct {
-	data sync.Map
+	data  sync.Map
+	queue FreeLockQueue
 
 	period time.Duration
-
-	queue FreeLockQueue
 }
 
 func (a *DefaultDriver) Init(rateCycle time.Duration) error {
@@ -27,10 +24,10 @@ func (a *DefaultDriver) Init(rateCycle time.Duration) error {
 func (a *DefaultDriver) AddRequest(ip string) (uint64, error) {
 	numInterface, _ := a.data.LoadOrStore(ip, &atomic.Uint64{})
 	num := numInterface.(*atomic.Uint64)
-	a.queue.Enqueue(unsafe.Pointer(&IpQueueEl{
+	a.queue.Enqueue(&IpQueueElement{
 		Key:      ip,
 		CreateAt: time.Now(),
-	}))
+	})
 	return num.Add(1), nil
 }
 
@@ -57,66 +54,60 @@ func (a *DefaultDriver) QueueWorker() {
 			time.Sleep(a.period)
 			continue
 		}
-		ipInfo := (*IpQueueEl)(el)
-		subTime := a.period - time.Now().Sub(ipInfo.CreateAt)
+		subTime := a.period - time.Now().Sub(el.CreateAt)
 		if subTime > 0 {
 			time.Sleep(subTime)
 		}
 
-		num, ok := a.data.Load(ipInfo.Key)
+		num, ok := a.data.Load(el.Key)
 		if ok && num.(*atomic.Uint64).Add(^uint64(0)) <= 0 {
-			a.data.Delete(ipInfo.Key)
+			a.data.Delete(el.Key)
 		}
 	}
 }
 
 type QueueElement struct {
-	Value unsafe.Pointer
-	Next  unsafe.Pointer
+	Value atomic.Pointer[IpQueueElement]
+	Next  atomic.Pointer[QueueElement]
 }
 
 // FreeLockQueue 从尾部加入，从头部添加
 type FreeLockQueue struct {
-	head unsafe.Pointer
-	tail unsafe.Pointer
+	head atomic.Pointer[QueueElement]
+	tail atomic.Pointer[QueueElement]
 }
 
 func (a *FreeLockQueue) Init() {
-	a.head = unsafe.Pointer(&QueueElement{})
-	a.tail = a.head
+	a.head.Store(&QueueElement{})
+	a.tail.Store(a.head.Load())
 }
 
-func (a *FreeLockQueue) Enqueue(value unsafe.Pointer) {
-	n := unsafe.Pointer(&QueueElement{})
+func (a *FreeLockQueue) Enqueue(value *IpQueueElement) {
+	n := &QueueElement{}
 	for {
-		tail := (*QueueElement)(a.tail)
-		next := tail.Next
-		if atomic.CompareAndSwapPointer(&tail.Value, nil, value) {
-			if !atomic.CompareAndSwapPointer(&tail.Next, next, n) || !atomic.CompareAndSwapPointer(&a.tail, unsafe.Pointer(tail), n) {
-				// unexpected enqueue movement
-				os.Exit(1)
-			} else {
-				return
+		tail := a.tail.Load()
+		if tail.Value.CompareAndSwap(nil, value) {
+			if !tail.Next.CompareAndSwap(nil, n) || !a.tail.CompareAndSwap(tail, n) {
+				panic("secure middleware: invalid queue element")
 			}
+			break
 		}
 	}
 }
 
-func (a *FreeLockQueue) Dequeue() unsafe.Pointer {
+func (a *FreeLockQueue) Dequeue() *IpQueueElement {
 	for {
-		head := (*QueueElement)(a.head)
-		next := head.Next
-		tail := (*QueueElement)(a.tail)
-		if head == (*QueueElement)(a.head) {
-			if head == tail {
-				if next == nil { // 队列为空
-					return nil
-				}
-				// 队列正在添加第一个元素
+		head := a.head.Load()
+		next := head.Next.Load()
+		if head == a.tail.Load() {
+			if next == nil {
+				return nil
+			} else {
+				// adding first element
 			}
-			if atomic.CompareAndSwapPointer(&a.head, unsafe.Pointer(head), next) {
-				return head.Value
-			}
+		}
+		if a.head.CompareAndSwap(head, next) {
+			return head.Value.Load()
 		}
 	}
 }

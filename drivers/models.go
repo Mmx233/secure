@@ -9,7 +9,7 @@ type Driver interface {
 	RemoveIp(ip string) (uint64, error)
 }
 
-type IpQueueEl struct {
+type IpQueueElement struct {
 	Key      string
 	CreateAt time.Time
 }
